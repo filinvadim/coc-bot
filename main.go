@@ -230,6 +230,9 @@ func (b *tgbot) startNotifyWorker(update tgbotapi.Update) {
 		log.Println("HOURS:", t.Hour(), b.Hour)
 
 		if t.Hour() == b.Hour {
+			if b.PillsLeft == 0 {
+				b.PillsLeft = b.PillsAll
+			}
 			msg := tgbotapi.NewMessage(
 				update.Message.Chat.ID,
 				fmt.Sprintf(
@@ -240,10 +243,7 @@ func (b *tgbot) startNotifyWorker(update tgbotapi.Update) {
 				),
 			)
 			b.PillsLeft--
-			if b.PillsLeft == 0 {
-				b.PillsLeft = b.PillsAll
-				continue
-			}
+
 			if b.PillsLeft < 3 {
 				msg.Text = msg.Text + "Таблетки заканчиваются! Не забудь купить новые!"
 			}
