@@ -43,17 +43,14 @@ func main() {
 
 	log.Printf("Authorized on account %s", botAPI.Self.UserName)
 
-	bt, err := os.ReadFile("sweety.json")
-	if err != nil {
-		log.Fatalln(err)
-	}
+	bt := os.Getenv("SWEET_NAMES")
 
 	bot := tgbot{
 		bot:  botAPI,
 		Step: zero,
 	}
 
-	err = json.Unmarshal(bt, &bot.SweetNames)
+	err = json.Unmarshal([]byte(bt), &bot.SweetNames)
 	if err != nil {
 		log.Fatalln(err)
 	}
