@@ -9,7 +9,7 @@ type Drug struct {
 	PillsTotal, PillsLeft int
 	TakingHour            int
 
-	PillTakenTime YearMonthDay
+	PillTakenTime time.Time
 }
 
 func (d *Drug) Reset() {
@@ -21,12 +21,13 @@ func (d *Drug) TakePill() {
 	if d.PillsLeft == 0 {
 		d.Reset()
 	}
-	y, m, day := time.Now().Date()
-	d.PillTakenTime = YearMonthDay{y, m, day}
 }
 
 func (d *Drug) IsAlreadyTaken(now time.Time) bool {
-	return d.PillTakenTime.IsToday(now)
+	y, m, day := now.Date()
+
+	dy, dm, dday := d.PillTakenTime.Date()
+	return dy == y && dm == m && dday == day
 }
 
 func (d *Drug) IsPillsRunOut() bool {

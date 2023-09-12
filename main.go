@@ -6,6 +6,7 @@ import (
 	"github.com/filinvadim/vadim-bot/pkg"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -40,8 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	botAPI.Debug = true
+	botAPI.Debug = false
 
 	log.Printf("Authorized on account %s", botAPI.Self.UserName)
 
@@ -51,6 +51,15 @@ func main() {
 		SweetNames:  pkg.SweetNames,
 		drugNames:   map[string]struct{}{},
 	}
+
+	go func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte("UP"))
+		})
+		http.ListenAndServe(":8080", mux)
+	}()
 
 	bot.run()
 }
@@ -105,7 +114,7 @@ func (b *tgbot) run() {
 
 			b.Drugs = append(b.Drugs, pkg.Drug{
 				Name:          update.Message.Text,
-				PillTakenTime: pkg.YearMonthDay{},
+				PillTakenTime: time.Time{},
 			})
 			b.drugNames[update.Message.Text] = struct{}{}
 
@@ -235,7 +244,7 @@ func (b *tgbot) handlePillsAll(update tgbotapi.Update) (*tgbotapi.MessageConfig,
 	if err != nil {
 		return nil, errors.New("Нужно число")
 	}
-	fmt.Println(b.Drugs[len(b.Drugs)-1].PillsLeft, all)
+
 	if b.Drugs[len(b.Drugs)-1].PillsLeft > all {
 		return nil, errors.New("Осталось больше, чем есть всего")
 	}
@@ -250,7 +259,7 @@ func (b *tgbot) handlePillsAll(update tgbotapi.Update) (*tgbotapi.MessageConfig,
 
 func (b *tgbot) handleTime(update tgbotapi.Update) (*tgbotapi.MessageConfig, error) {
 	hour, err := strconv.Atoi(update.Message.Text)
-	if err != nil {
+	if err != nil || hour > 24 {
 		return nil, errors.New("Нужно число между 1-24")
 	}
 
@@ -267,32 +276,35 @@ func (b *tgbot) startNotifyWorker(update tgbotapi.Update) {
 	log.Println("WORKER STARTED")
 	tick := time.NewTicker(time.Minute * 5)
 	for t := range tick.C {
-		for _, d := range b.Drugs {
-			if d.IsAlreadyTaken(t) {
+		for i, d := range b.Drugs {
+			if d.IsAlreadyTaken(t) || t.Hour() != d.TakingHour {
 				continue
 			}
 
-			log.Println("HOURS:", t.Hour(), d.TakingHour)
+			log.Printf(
+				"drug: %s, hour now: %d == taking hour: %d, prev taken date: %s",
+				d.Name, t.Hour(), d.TakingHour, d.PillTakenTime.String(),
+			)
 
-			if t.Hour() == d.TakingHour {
-				d.TakePill()
+			d.TakePill()
 
-				msg := tgbotapi.NewMessage(
-					update.Message.Chat.ID,
-					fmt.Sprintf(
-						pkg.PillsTakingTimeText,
-						b.randName(),
-						d.Name,
-						pkg.GetWeekdayName(t),
-						d.PillsLeft,
-					),
-				)
+			msg := tgbotapi.NewMessage(
+				update.Message.Chat.ID,
+				fmt.Sprintf(
+					pkg.PillsTakingTimeText,
+					b.randName(),
+					d.Name,
+					pkg.GetWeekdayName(t),
+					d.PillsLeft,
+				),
+			)
 
-				if d.IsPillsRunOut() {
-					msg.Text = msg.Text + pkg.PillsRunOutText
-				}
-				b.bot.Send(msg)
+			if d.IsPillsRunOut() {
+				msg.Text = msg.Text + pkg.PillsRunOutText
 			}
+			b.bot.Send(msg)
+
+			b.Drugs[i].PillTakenTime = time.Now()
 		}
 	}
 }
