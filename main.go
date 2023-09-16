@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -21,6 +22,7 @@ const (
 	dragName
 	pillsLeft
 	pillsAll
+	conflicts
 	bestTime
 	anotherDrug
 	notify
@@ -115,6 +117,7 @@ func (b *tgbot) run() {
 			b.Drugs = append(b.Drugs, pkg.Drug{
 				Name:          update.Message.Text,
 				PillTakenTime: time.Time{},
+				Conflicts:     map[string]struct{}{},
 			})
 			b.drugNames[update.Message.Text] = struct{}{}
 
@@ -141,8 +144,15 @@ func (b *tgbot) run() {
 				continue
 			}
 			b.bot.Send(msg)
+			b.Step = conflicts
+		case conflicts:
+			msg, err := b.handleConflicts(update)
+			if err != nil {
+				b.bot.Send(tgbotapi.NewMessage(update.Message.Chat.ID, err.Error()))
+				continue
+			}
+			b.bot.Send(msg)
 			b.Step = bestTime
-
 		case bestTime:
 			msg, err := b.handleTime(update)
 			if err != nil {
@@ -252,6 +262,20 @@ func (b *tgbot) handlePillsAll(update tgbotapi.Update) (*tgbotapi.MessageConfig,
 
 	msg := tgbotapi.NewMessage(
 		update.Message.Chat.ID,
+		fmt.Sprintf("%s, c какими лекарствами его надо разнести по времени? Напиши все через запятую", b.randName()),
+	)
+	return &msg, nil
+}
+
+func (b *tgbot) handleConflicts(update tgbotapi.Update) (*tgbotapi.MessageConfig, error) {
+	conflicts := strings.Split(update.Message.Text, ",")
+	for _, c := range conflicts {
+		name := strings.ToLower(strings.TrimSpace(c))
+		b.Drugs[len(b.Drugs)-1].Conflicts[name] = struct{}{}
+	}
+
+	msg := tgbotapi.NewMessage(
+		update.Message.Chat.ID,
 		fmt.Sprintf(pkg.BestTimeStageText, b.randName()),
 	)
 	return &msg, nil
@@ -272,8 +296,28 @@ func (b *tgbot) handleTime(update tgbotapi.Update) (*tgbotapi.MessageConfig, err
 	return &msg, nil
 }
 
+func (b *tgbot) spreadConflictingDrugs() {
+	for i, d := range b.Drugs {
+		for _, check := range b.Drugs {
+			lowName := strings.ToLower(d.Name)
+			if check.IsConflicting(lowName) {
+				if b.Drugs[i].TakingHour > 22 {
+					b.Drugs[i].TakingHour--
+					continue
+				}
+				if b.Drugs[i].TakingHour < 7 {
+					b.Drugs[i].TakingHour++
+					continue
+				}
+			}
+		}
+	}
+}
+
 func (b *tgbot) startNotifyWorker(update tgbotapi.Update) {
 	log.Println("WORKER STARTED")
+	b.spreadConflictingDrugs()
+
 	tick := time.NewTicker(time.Minute * 5)
 	for t := range tick.C {
 		for i, d := range b.Drugs {

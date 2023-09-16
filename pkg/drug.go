@@ -8,8 +8,13 @@ type Drug struct {
 	Name                  string
 	PillsTotal, PillsLeft int
 	TakingHour            int
+	PillTakenTime         time.Time
+	Conflicts             map[string]struct{}
+}
 
-	PillTakenTime time.Time
+func (d *Drug) IsConflicting(name string) bool {
+	_, ok := d.Conflicts[name]
+	return ok
 }
 
 func (d *Drug) Reset() {
